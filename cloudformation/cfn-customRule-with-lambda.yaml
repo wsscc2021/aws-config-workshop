@@ -1,0 +1,110 @@
+Resources:
+  ###########################################################################
+  # custom rule using lambda function                                       #
+  ###########################################################################
+  EvaluationFunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      # RoleName: example-lambda-role
+      Description: The Lambda execution role for aws config evaluation
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'sts:AssumeRole'
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      Policies: 
+        - PolicyName: config-evaluations
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'config:PutEvaluations'
+                Resource: '*'
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  EvaluationFunction:
+    Type: AWS::Lambda::Function
+    Properties: 
+      FunctionName: python3-evaluation-function
+      Description: The lambda function 
+      Runtime: python3.9 # python3.9 , nodejs14.x  ...
+      Architectures: # arm64 , x86_64
+        - arm64
+      PackageType: Zip # Image , Zip
+      Code: 
+        # S3Bucket: String
+        # S3Key: String
+        # S3ObjectVersion: String
+        ZipFile: >
+          import boto3
+          import json
+
+          def lambda_handler(event, context):
+              configurationItem = json.loads(event['invokingEvent'])['configurationItem']
+              resultToken       = event['resultToken']
+              complianceType, annotation = evaluate_s3_bucket_versioning(configurationItem)
+              put_evaluation(configurationItem, resultToken, complianceType, annotation)
+
+          def evaluate_s3_bucket_versioning(configurationItem):
+              bucketVersioningStatus = configurationItem['supplementaryConfiguration']\
+                                                        ['BucketVersioningConfiguration']\
+                                                        ['status']
+              if bucketVersioningStatus == "Enabled":
+                  return "COMPLIANT", "Bucket versioning is enabled"
+              else:
+                  return "NON_COMPLIANT", "Bucket versioning is disabled"
+
+          def put_evaluation(configurationItem, resultToken, complianceType, annotation):
+              # complianceType = 'COMPLIANT'|'NON_COMPLIANT'|'NOT_APPLICABLE'|'INSUFFICIENT_DATA'
+              evaluation = dict()
+              evaluation['ComplianceResourceType'] = configurationItem['resourceType']
+              evaluation['ComplianceResourceId']   = configurationItem['resourceId']
+              evaluation['OrderingTimestamp']      = configurationItem['configurationItemCaptureTime']
+              evaluation['ComplianceType']         = complianceType
+              evaluation['Annotation']             = annotation
+
+              client = boto3.client('config')
+              response = client.put_evaluations(
+                  Evaluations=[evaluation],
+                  ResultToken=resultToken,
+                  TestMode=False)
+      Handler: index.handler
+      MemorySize: 512 # MB
+      Timeout: 60 # seconds
+      Role: !GetAtt EvaluationFunctionRole.Arn
+      EphemeralStorage: 
+        Size: 512 # MB
+  
+  EvaluationFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties: 
+      Action: lambda:InvokeFunction
+      # EventSourceToken: String
+      FunctionName: !Ref EvaluationFunction
+      # FunctionUrlAuthType: String
+      Principal: "config.amazonaws.com"
+      # PrincipalOrgID: String
+      # SourceAccount: String
+      # SourceArn: String
+
+
+  S3VersioningEnabledCustomRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn: EvaluationFunction
+    Properties: 
+      ConfigRuleName: S3BucketVersioningEnabledCustomRule
+      Scope:
+        ComplianceResourceTypes:
+        - AWS::S3::Bucket
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceDetails:
+        - EventSource: aws.config
+          MessageType: ConfigurationItemChangeNotification
+        SourceIdentifier: !GetAtt EvaluationFunction.Arn
