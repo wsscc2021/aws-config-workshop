@@ -1,0 +1,73 @@
+
+Resources:
+  ###########################################################################
+  # managed rule                                                            #
+  ###########################################################################
+  S3BucketServerSideEncryptionEnabled:
+    Type: AWS::Config::ConfigRule
+    Properties: 
+      ConfigRuleName: S3BucketServerSideEncryptionEnabled
+      Scope:
+        ComplianceResourceTypes:
+        - AWS::S3::Bucket
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED
+
+  ###########################################################################
+  # Remediation action                                                      #
+  ###########################################################################
+  S3OperationsAutomationsExecutionRole: 
+    Type: "AWS::IAM::Role"
+    Properties: 
+      # RoleName: S3OperationsAutomationsExecutionRole
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "ssm.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+  
+  S3OperationsAutomationExecutionRolePolicies: 
+    Type: "AWS::IAM::Policy"
+    Properties: 
+      PolicyName: "S3OperationsAutomationsExecutionRolePolicy"
+      PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Action: 
+              - "s3:PutBucketPublicAccessBlock"
+              - "s3:PutEncryptionConfiguration"
+              - "s3:PutBucketLogging"
+            Resource: "*"
+      Roles: 
+        - !Ref S3OperationsAutomationsExecutionRole
+
+  S3BucketServerSideEncryptionEnabledRemediation:
+    DependsOn: S3BucketServerSideEncryptionEnabled
+    Type: 'AWS::Config::RemediationConfiguration'
+    Properties:
+      ConfigRuleName: S3BucketServerSideEncryptionEnabled
+      ResourceType: "AWS::S3::Bucket"
+      TargetId: "AWS-EnableS3BucketEncryption"
+      TargetType: "SSM_DOCUMENT"
+      TargetVersion: "1"
+      Parameters:
+        AutomationAssumeRole:
+          StaticValue:
+            Values:
+              - !GetAtt S3OperationsAutomationsExecutionRole.Arn
+        BucketName:
+          ResourceValue:
+            Value: "RESOURCE_ID"
+        SSEAlgorithm:
+          StaticValue:
+            Values:
+              - "AES256"
