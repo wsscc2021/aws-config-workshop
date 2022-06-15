@@ -86,15 +86,13 @@ Resources:
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
-        RestrictPublicBuckets: true
+        RestrictPublicBuckets: false
       BucketEncryption: 
         ServerSideEncryptionConfiguration: 
           - BucketKeyEnabled: false
             # ServerSideEncryptionByDefault: 
             #   SSEAlgorithm: aws:kms # AES256 , aws:kms
             #   KMSMasterKeyID: !GetAtt Key.Arn
-      VersioningConfiguration: 
-        Status: Enabled # Enabled , Suspended
   
   # S3 Bucket Policy (for logging)
   LogBucketPolicy:
