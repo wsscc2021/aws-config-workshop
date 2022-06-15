@@ -1,0 +1,22 @@
+rule bucket_encryption when 
+        resourceType == "AWS::S3::Bucket" {
+    supplementaryConfiguration.ServerSideEncryptionConfiguration.rules[*] {
+        applyServerSideEncryptionByDefault.sseAlgorithm IN ["AES256","aws:kms"]
+        # 대소문자를 철저하게 구분합니다.
+        # 예를 들어 ["AWS:KMS"]는 매치되지 않음.
+    }
+}
+
+rule bucket_versioning when 
+        resourceType == "AWS::S3::Bucket" {
+    supplementaryConfiguration.BucketVersioningConfiguration.status == "Enabled"
+}
+
+rule public_access_block when
+        resourceType == "AWS::S3::Bucket" {
+    let config = supplementaryConfiguration.PublicAccessBlockConfiguration
+    %config.blockPublicAcls == true
+    %config.ignorePublicAcls == true
+    %config.blockPublicPolicy == true
+    %config.restrictPublicBuckets == true
+}
